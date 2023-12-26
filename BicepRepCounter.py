@@ -2,23 +2,33 @@ from MotionDetection import load_model, movenet, draw_prediction_on_image
 import cv2
 import tensorflow as tf
 
+class BicepRepCounter:
+    def __init__(self):
+        self.is_wrist_above_elbow = False
+        self.rep_count = 0
 
-def count_bicep_reps(keypoints_with_scores, threshold=0.4):
-    wrist = keypoints_with_scores[0, 0, 10, :3]  # Keypoint 10 (right wrist)
-    elbow = keypoints_with_scores[0, 0, 8, :3]  # Keypoint 8 (right elbow)
+    def count_bicep_reps(self, keypoints_with_scores, threshold=0.4):
+        wrist = keypoints_with_scores[0, 0, 10, :3]  # Keypoint 10 (right wrist)
+        elbow = keypoints_with_scores[0, 0, 8, :3]  # Keypoint 8 (right elbow)
 
-    # Check if keypoints are detected with enough confidence
-    if wrist[2] > threshold and elbow[2] > threshold:
-        return wrist[1] < elbow[1]  # True if wrist is above elbow
-    return False
+        # Check if keypoints are detected with enough confidence
+        if wrist[2] > threshold and elbow[2] > threshold:
+            # Check if wrist is above elbow
+            if wrist[1] < elbow[1]:
+                self.is_wrist_above_elbow = True
+            # When the wrist goes down past the elbow and was above before, count the rep
+            elif self.is_wrist_above_elbow:
+                self.rep_count += 1
+                self.is_wrist_above_elbow = False
 
+        return self.rep_count
 
 def main():
     module, input_size = load_model()
     cap = cv2.VideoCapture(0)
 
-    rep_count = 0
-    is_up = False
+    # Initialize the rep counter
+    rep_counter = BicepRepCounter()
 
     try:
         while True:
@@ -36,13 +46,8 @@ def main():
             # Run model inference
             keypoints_with_scores = movenet(input_image, module)
 
-            # Check for bicep curl movement
-            if count_bicep_reps(keypoints_with_scores):
-                if not is_up:
-                    rep_count += 1
-                    is_up = True
-            else:
-                is_up = False
+            # Count bicep reps
+            rep_count = rep_counter.count_bicep_reps(keypoints_with_scores)
 
             # Draw predictions on the image
             output_overlay = draw_prediction_on_image(frame_rgb, keypoints_with_scores)
@@ -63,7 +68,6 @@ def main():
     finally:
         cap.release()
         cv2.destroyAllWindows()
-
 
 if __name__ == "__main__":
     main()
